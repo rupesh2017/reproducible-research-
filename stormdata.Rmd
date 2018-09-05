@@ -1,0 +1,164 @@
+---
+title: "Event affect live and economic across US between 1950 to 2011"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#SYNOPSIS
+The data is collected by NOAA, the data is about the different major weather event,the aim of this analysis was to find, which event has more impact
+on health and economic so that proper step can be taken.Data from NOAA was containing unit of money in varing range so we converted into common for analysis.
+During the analysis we saw that although flood was measure cause of economic issue but not health one.
+We are reading complete data but for analysis only subset of it was selected.
+
+
+Loading Library need
+```{r message=FALSE,warning=FALSE}
+library(data.table)
+library(tidyverse)
+library(lubridate)
+```
+
+#Download the file
+```{r}
+if(!file.exists("repdata%2Fdata%2FStormData.csv")){
+        download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "repdata%2Fdata%2FStormData.csv")
+}
+```
+
+
+#reading raw data
+```{r cache=TRUE}
+(stormdata <- read_csv("repdata%2Fdata%2FStormData.csv"))
+```
+
+
+#take look at strcture of data
+```{r}
+glimpse(stormdata)
+```
+we can see that BGN_DATE , BGN_TIME ,END_DATE ,END_TIME are not allocated proper class so we are changing it as-
+althought it is not necessary.
+
+```{r}
+stormdata$BGN_DATE <- mdy_hms(stormdata$BGN_DATE)
+stormdata$END_DATE <- mdy_hms(stormdata$END_DATE)
+```
+
+the stormdata still contain unmodified BGN_TIME and END_TIME so they can be used as per use 
+
+#select data needed for analysis (related to loss)
+```{r}
+economic <- stormdata %>% select(EVTYPE,PROPDMG,PROPDMGEXP,CROPDMG,CROPDMGEXP)
+dim(economic)
+summary(economic$PROPDMG)
+summary(economic$CROPDMG)
+```
+
+#let us see what kind value in our data
+```{r}
+unique(economic$PROPDMGEXP)
+unique(economic$CROPDMGEXP)
+```
+
+there is lot of issue with unit mention in PROPDMGEXP and CROPDMGEXP.we cannot find total for now.
+so lets solve unit issue. we can also see there is NA value 
+
+#let us see what proportion of NA is available in your data
+```{r}
+mean(is.na(economic$CROPDMGEXP))
+mean(is.na(economic$PROPDMGEXP))
+```
+
+now let solve the unit problem
+#let us explore + - ? NA in our economic data
+```{r}
+economic %>% filter(CROPDMGEXP=="?")
+economic %>% filter(PROPDMGEXP=="+")
+economic %>% filter(PROPDMGEXP=="-")
+economic %>% filter(PROPDMGEXP=="?")
+economic %>% filter(PROPDMGEXP=="NA")
+```
+######let us take replace them (?,+,-) with 1 and other as per their value 
+
+```{r}
+economic %>% mutate(PROPDMGEXP=recode(PROPDMGEXP,"K"=1000,"M"=1000000,"B"=1000000000,"m"=1000000,"+"=1,"0"=1,"5"=100000,"6"=1000000,"?"=1,"4"=10000,"2"=100,"3"=1000,"h"=100,"7"=10000000,"H"=100,"-"=1,"1"=1,"8"=100000000,.default=1)) ->economic
+```
+
+```{r}
+economic %>% mutate(CROPDMGEXP=recode(CROPDMGEXP,"M"=1000000,"k"=1000,"K"=1000,"m"=1000000,"B"=1000000000,"2"=100,.default=1)) ->economic
+```
+
+#let us grab a look at our data  values
+
+```{r}
+unique(economic$PROPDMGEXP)
+unique(economic$CROPDMGEXP)
+```
+
+
+#let us replace all NA to 1
+
+```{r}
+economic$PROPDMGEXP %>% replace_na(0) ->economic$PROPDMGEXP
+economic$CROPDMGEXP %>% replace_na(0) ->economic$CROPDMGEXP
+```
+
+#let us now compute the loss
+```{r}
+economic %>% mutate(TOTAL_PROPDMG = (PROPDMG*PROPDMGEXP),TOTAL_CROPDMG = (CROPDMG*CROPDMGEXP),TOTAL_LOSS=(TOTAL_PROPDMG+TOTAL_CROPDMG)) ->new_economic
+```
+
+#let see which event did how much loss
+```{r}
+new_economic %>% group_by(EVTYPE)%>%
+summarise(LOSS_PER_EVENT=sum(TOTAL_LOSS))%>%
+arrange(desc(LOSS_PER_EVENT)) -> economic_value
+```
+
+#plot this information 
+```{r}
+ggplot(data=economic_value)+geom_point(aes(EVTYPE,LOSS_PER_EVENT))
+```
+
+###we can see that value graph is not informative so let us look at top row for now
+
+```{r}
+ggplot(data=economic_value[1:4,])+geom_col(aes(EVTYPE,LOSS_PER_EVENT,fill=EVTYPE))+ggtitle(" top 4 types of events that have the greatest economic consequences")
+```
+
+#let us select data for analysis (related to health)
+```{r}
+ health <- stormdata %>% select(EVTYPE,FATALITIES,INJURIES)
+```
+
+#let us see at our data 
+```{r}
+summary(health$FATALITIES)
+summary(health$INJURIES)
+```
+
+#let us see how many live were affected 
+```{r}
+health %>% mutate(total_life_affected =(FATALITIES+INJURIES)) -> healthdata
+```
+
+#let us see which event affected more lives than others
+```{r}
+healthdata %>% group_by(EVTYPE)%>%
+summarise(total_life_affected = sum(total_life_affected))%>%
+arrange(desc(total_life_affected))-> life_data
+```
+
+#let have look at graph to see which event was prominent
+```{r}
+ggplot(data=life_data[1:4,])+geom_col(aes(EVTYPE,total_life_affected,fill=EVTYPE))+ggtitle(" top 4 types of events that have the greatest health consequences")
+```
+
+#CONCLUSION
+it seem that flood cause more economic harm and tornado causing live losses and injuries.
+so during tornado proper measure can be taken for human safety while  during flood more attention must be paid to secure economic.
